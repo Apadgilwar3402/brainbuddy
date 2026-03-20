@@ -1,8 +1,9 @@
-fastapi==0.115.0
-uvicorn==0.30.6
-groq
-pydantic==2.9.0
+fastapi==0.111.0
+uvicorn==0.29.0
+groq==0.9.0
+pydantic==2.7.1
+pydantic-core==2.18.2
 python-dotenv==1.0.1
-sqlalchemy==2.0.35
-requests
-gunicorn
+sqlalchemy==2.0.30
+requests==2.31.0
+gunicorn==21.2.0
