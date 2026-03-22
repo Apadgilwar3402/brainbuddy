@@ -60,7 +60,7 @@ STEPWISE_KEYWORDS = [
     "how to learn", "how do i learn", "how can i learn",
     "roadmap", "guide", "path", "pathway", "plan",
     "where to start", "how to start", "getting started",
-    "beginner", "from scratch", "learn",
+    "beginner", "from scratch", "learn", "resources", "best way",
 ]
 
 def wants_video(concept: str) -> bool:
@@ -78,51 +78,51 @@ def wants_steps(concept: str) -> bool:
 # ─────────────────────────────────────────────
 
 BASE_RULES = """
-You are BrainBuddy, a friendly teacher who explains engineering, science,
-and technology topics simply and clearly. Adjust your language to suit
-the question — simple for 5-year-olds, more detailed for learning guides.
+You are BrainBuddy, a friendly and knowledgeable teacher.
 
-CRITICAL RULES — read carefully:
+CRITICAL RULES:
 
-1. DIRECTLY ANSWER THE QUESTION. Never restate or redefine it.
-   - "What are some X?"         → LIST actual X items, explain each briefly
-   - "How does X work?"         → EXPLAIN the mechanism step by step
-   - "What is X?"               → DEFINE X clearly and simply
-   - "How to learn X?"          → GIVE A NUMBERED STEP-BY-STEP ROADMAP
-   - "Compare X and Y"          → USE MARKDOWN TABLES
-   - "Stepwise approach to X"   → NUMBERED LIST of concrete steps
+1. The "explanation" field must contain the FULL answer — not an intro sentence.
+   WRONG: "Here's a roadmap to learn R."
+   WRONG: "Here are some resources for learning R."
+   CORRECT: Start directly with the actual content — steps, list items, or explanation.
 
-2. STEPWISE / ROADMAP RULE — when asked for steps, a plan, or how to learn:
-   - Give a NUMBERED list of concrete, actionable steps
-   - Each step should have a title and 1-2 sentences explaining what to do
-   - Format like this inside the explanation field:
-     1. **Step title** — what to do and why.
-     2. **Step title** — what to do and why.
-     3. **Step title** — what to do and why.
-   - Give at least 5-7 steps for learning roadmaps
-   - Be specific — mention actual tools, resources, or concepts to study
+2. NEVER write intro phrases like:
+   - "Here's a roadmap..."
+   - "Here are some resources..."
+   - "Let me explain..."
+   - "Great question!"
+   Just start with the actual answer immediately.
 
-3. TABLE RULE — for comparisons use markdown tables:
-   | Column 1 | Column 2 |
-   |----------|----------|
-   | value    | value    |
-   For separate tables label them **Similarities** and **Differences**
+3. QUESTION TYPE RULES:
+   - "What are some X?" or "List X"  → bullet list of items, each with 1-2 sentence explanation
+   - "How does X work?"              → clear step-by-step or paragraph explanation
+   - "What is X?"                    → short clear definition
+   - "How to learn X?" or "Stepwise approach to X" or "Best resources for X"
+                                     → numbered steps, each with bold title and 1-2 sentences
+   - "Compare X and Y"               → markdown tables
 
-4. ANALOGY RULE — write 2-4 full descriptive sentences, never just a label.
-   BAD:  "Like building blocks"
-   GOOD: "Think of learning R like building with LEGO. First you learn what
-          each brick does. Then you start snapping them together to make
-          small things. Eventually you can build entire cities — that is
-          what writing full R programs feels like."
+4. FOR LEARNING / RESOURCE / ROADMAP QUESTIONS — use this exact format in explanation:
+   1. **Title of step** — What to do. Why it matters.
+   2. **Title of step** — What to do. Mention specific tools or resources.
+   3. **Title of step** — What to do. Be concrete and actionable.
+   (give at least 6 steps, mention real tools like books, websites, packages)
 
-5. NEVER return an empty explanation. If unsure, give your best answer.
+5. TABLE FORMAT for comparisons:
+   | Feature | Option A | Option B |
+   |---------|----------|----------|
+   | value   | value    | value    |
+
+6. ANALOGY: 2-4 full sentences. Never just a label or single phrase.
+
+7. NEVER return an empty or one-sentence explanation for a detailed question.
 """
 
 ELI5_SYSTEM_PROMPT = BASE_RULES + """
-Respond ONLY with a raw JSON object — no markdown fences, no extra text:
+Respond ONLY with raw JSON — no markdown fences, no extra text outside the JSON:
 {
-  "explanation": "Direct answer. Numbered steps for how-to questions. Tables for comparisons.",
-  "analogy": "2-4 full descriptive sentences.",
+  "explanation": "The FULL answer starting immediately — no intro sentence. Use numbered steps for roadmaps, bullet lists for resource questions.",
+  "analogy": "2-4 full descriptive sentences with a vivid comparison.",
   "video_script": null,
   "follow_up_questions": ["question 1", "question 2", "question 3"]
 }
@@ -130,10 +130,10 @@ Respond ONLY with a raw JSON object — no markdown fences, no extra text:
 
 ELI5_WITH_VIDEO_PROMPT = BASE_RULES + """
 The user wants a VIDEO — include a spoken script.
-Respond ONLY with a raw JSON object — no markdown fences, no extra text:
+Respond ONLY with raw JSON — no markdown fences, no extra text outside the JSON:
 {
-  "explanation": "Direct answer. Numbered steps for how-to questions. Tables for comparisons.",
-  "analogy": "2-4 full descriptive sentences.",
+  "explanation": "The FULL answer starting immediately — no intro sentence.",
+  "analogy": "2-4 full descriptive sentences with a vivid comparison.",
   "video_script": "A 30-second natural spoken script. No bullet points.",
   "follow_up_questions": ["question 1", "question 2", "question 3"]
 }
@@ -152,6 +152,22 @@ def clean_json(raw: str) -> str:
     raw = re.sub(r'^```(?:json)?\s*', '', raw)
     raw = re.sub(r'\s*```$', '', raw)
     return raw.strip()
+
+def is_just_intro(text: str) -> bool:
+    """Detects if the explanation is just an intro sentence with no real content"""
+    if not text or len(text.strip()) < 30:
+        return True
+    intro_patterns = [
+        r"^here'?s? (a |an )?(detailed |step[- ]by[- ]step |complete )?(roadmap|guide|list|overview|breakdown|approach)",
+        r"^(let me|i will|i'll|i can) (explain|show|give|provide|walk)",
+        r"^(great question|good question|sure|of course|absolutely)",
+        r"^(below (is|are)|here (is|are) (some|the|a))",
+    ]
+    lowered = text.strip().lower()
+    for pattern in intro_patterns:
+        if re.match(pattern, lowered):
+            return True
+    return False
 
 def get_history_from_db(conversation_id: int, db: Session) -> list[dict]:
     msgs = (
@@ -219,35 +235,41 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
 
     db.add(Message(conversation_id=conv.id, role="user", content=request.concept))
 
-    # Build user message with explicit instruction based on question type
+    # Build specific user message based on question type
     if step_requested:
         user_msg = (
-            f"Give a detailed numbered step-by-step roadmap or guide. "
-            f"Be specific and actionable — mention real tools, resources, or concepts. "
-            f"Do NOT give a vague answer. Directly answer: {request.concept}"
+            f"Give at least 6 numbered steps with bold titles. "
+            f"Start DIRECTLY with '1.' — do NOT write any intro sentence first. "
+            f"Mention specific real tools, websites, books, or packages in each step. "
+            f"Question: {request.concept}"
         )
     elif table_requested:
         user_msg = (
-            f"Answer using markdown tables. Simple language. "
-            f"Directly answer without restating: {request.concept}"
+            f"Answer using markdown tables. "
+            f"Start directly with the table — no intro sentence. "
+            f"Question: {request.concept}"
         )
     else:
         user_msg = (
-            f"Directly answer this using simple, clear language. "
-            f"Do not restate the question — just answer it: {request.concept}"
+            f"Answer directly and fully. "
+            f"Do NOT write an intro sentence — start immediately with the answer. "
+            f"Question: {request.concept}"
         )
 
     history.append({"role": "user", "content": user_msg})
     groq_messages = [{"role": "system", "content": system_prompt}] + history
 
-    try:
-        response = client.chat.completions.create(
+    def call_groq(messages, temp=0.7):
+        return client.chat.completions.create(
             model="llama-3.1-8b-instant",
-            max_tokens=1500,
-            temperature=0.7,
-            messages=groq_messages,
+            max_tokens=2000,           # More tokens so steps don't get cut off
+            temperature=temp,
+            messages=messages,
             response_format={"type": "json_object"},
         )
+
+    try:
+        response = call_groq(groq_messages)
         raw_text = clean_json(response.choices[0].message.content)
         parsed   = json.loads(raw_text)
 
@@ -258,37 +280,32 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
         db.rollback()
         raise HTTPException(status_code=502, detail=f"AI API error: {str(e)}")
 
-    # Ensure all fields exist and explanation is never empty
     parsed.setdefault("analogy",             "")
     parsed.setdefault("video_script",        None)
     parsed.setdefault("follow_up_questions", [])
 
-    # If explanation is empty or missing, retry once with a stricter prompt
-    if not parsed.get("explanation", "").strip():
+    # Retry if explanation is empty or just an intro sentence
+    if is_just_intro(parsed.get("explanation", "")):
         try:
-            retry = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                max_tokens=1500,
-                temperature=0.5,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"You MUST provide a detailed answer. Do not return empty fields. Answer this fully: {request.concept}"}
-                ],
-                response_format={"type": "json_object"},
+            retry_msg = (
+                f"IMPORTANT: Your previous answer only had an intro sentence with no actual content. "
+                f"This time, start your explanation field DIRECTLY with the numbered steps or content. "
+                f"No intro. Begin with '1.' immediately. "
+                f"Question: {request.concept}"
             )
-            retry_text   = clean_json(retry.choices[0].message.content)
-            retry_parsed = json.loads(retry_text)
-            if retry_parsed.get("explanation", "").strip():
+            retry_response = call_groq(
+                [{"role": "system", "content": system_prompt},
+                 {"role": "user",   "content": retry_msg}],
+                temp=0.5
+            )
+            retry_parsed = json.loads(clean_json(retry_response.choices[0].message.content))
+            if not is_just_intro(retry_parsed.get("explanation", "")):
                 parsed = retry_parsed
                 parsed.setdefault("analogy",             "")
                 parsed.setdefault("video_script",        None)
                 parsed.setdefault("follow_up_questions", [])
         except Exception:
-            pass  # Keep original response if retry also fails
-
-    # Final fallback so we never show "Sorry, I couldn't generate"
-    if not parsed.get("explanation", "").strip():
-        parsed["explanation"] = f"Here is a guide for: {request.concept}. Please try asking again — sometimes the AI needs a slightly different phrasing."
+            pass
 
     talk_id = None
     if video_requested and parsed.get("video_script") and os.environ.get("DID_API_KEY"):
@@ -297,7 +314,7 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
     db.add(Message(
         conversation_id=conv.id,
         role="assistant",
-        content=parsed["explanation"],
+        content=parsed.get("explanation", ""),
         ai_response=json.dumps(parsed),
     ))
     conv.updated_at    = datetime.utcnow()
