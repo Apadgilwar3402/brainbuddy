@@ -67,13 +67,41 @@ function VideoScriptSection({ script }) {
   )
 }
 
-function FollowUps({ questions, onAsk }) {
+function FollowUps({ questions, onAsk, onContinue, hasMore }) {
+  const safeQuestions = (questions || [])
+    .map(q => typeof q === 'string' ? q : typeof q === 'object' ? Object.values(q)[0] || '' : String(q))
+    .filter(q => q && q.trim().length > 0)
+
+  if (safeQuestions.length === 0 && !hasMore) return null
+
   return (
     <div style={{ marginTop: '4px' }}>
       <p style={{ fontSize: '11px', fontWeight: 500, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '10px' }}>Dig deeper →</p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-        {questions.map((q, i) => (
-          <button key={i} onClick={() => onAsk(q)} style={{ background: 'var(--bg-input)', border: '1.5px solid var(--border-main)', borderRadius: '999px', padding: '7px 14px', fontSize: '13px', color: 'var(--text-primary)', cursor: 'pointer', transition: 'all 0.15s ease' }}
+
+        {/* Continue button — shown when there are more steps */}
+        {hasMore && (
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onContinue() }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              background: 'var(--navy)', border: '1.5px solid var(--navy-mid)',
+              borderRadius: '999px', padding: '7px 16px',
+              fontSize: '13px', color: 'white',
+              cursor: 'pointer', transition: 'all 0.15s ease', fontWeight: 500,
+            }}
+            onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
+            onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+          >
+            Continue → next steps
+          </button>
+        )}
+
+        {safeQuestions.map((q, i) => (
+          <button
+            key={i}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAsk(q) }}
+            style={{ background: 'var(--bg-input)', border: '1.5px solid var(--border-main)', borderRadius: '999px', padding: '7px 14px', fontSize: '13px', color: 'var(--text-primary)', cursor: 'pointer', transition: 'all 0.15s ease', textAlign: 'left' }}
             onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--teal)'; e.currentTarget.style.background = 'var(--teal-pale)'; e.currentTarget.style.color = 'var(--teal)' }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-main)'; e.currentTarget.style.background = 'var(--bg-input)'; e.currentTarget.style.color = 'var(--text-primary)' }}>
             {q}
@@ -86,6 +114,10 @@ function FollowUps({ questions, onAsk }) {
 
 export default function ResponseCard({ data, onFollowUp }) {
   const readAloud = useReadAloud()
+
+  // Continue sends a message that asks the AI to continue from where it left off
+  const handleContinue = () => onFollowUp("Continue — give me the next steps from where you left off")
+
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '32px', animation: 'fadeUp 0.4s ease both' }}>
       <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: 'var(--navy)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0, marginTop: '2px' }}>🧠</div>
@@ -96,7 +128,12 @@ export default function ResponseCard({ data, onFollowUp }) {
           <Section icon="🌍" title="Real-World Analogy" content={data.analogy} bg="var(--coral-pale)" borderColor="#F5C4B6" iconBg="rgba(232,105,74,0.15)" onReadAloud={readAloud} speaking={readAloud.speaking} markdown={false} />
         )}
         {data.video_requested && data.video_script && <VideoScriptSection script={data.video_script} />}
-        <FollowUps questions={data.follow_up_questions || []} onAsk={onFollowUp} />
+        <FollowUps
+          questions={data.follow_up_questions || []}
+          onAsk={onFollowUp}
+          onContinue={handleContinue}
+          hasMore={data.has_more || false}
+        />
       </div>
     </div>
   )

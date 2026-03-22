@@ -30,6 +30,8 @@ function MemoryToast({ message, onDone }) {
     return () => clearTimeout(t);
   }, [onDone]);
 
+  if (!message) return null;
+
   return (
     <div
       style={{
@@ -52,8 +54,8 @@ function MemoryToast({ message, onDone }) {
         whiteSpace: "nowrap",
       }}
     >
-      🧩 Memory saved:{" "}
-      <em style={{ color: "white", fontStyle: "normal" }}>{message}</em>
+      {"🧩 Memory saved: "}
+      <span style={{ color: "white" }}>{String(message)}</span>
     </div>
   );
 }

@@ -72,6 +72,12 @@ MEMORY_KEYWORDS = [
     "whenever you", "i want you to always",
 ]
 
+CONTINUE_KEYWORDS = [
+    "continue", "continue from", "next steps", "more steps",
+    "what's next", "whats next", "keep going", "go on",
+    "tell me more", "show more", "next 6", "more",
+]
+
 def wants_video(concept: str) -> bool:
     return any(kw in concept.lower() for kw in VIDEO_KEYWORDS)
 
@@ -83,6 +89,9 @@ def wants_steps(concept: str) -> bool:
 
 def wants_memory(concept: str) -> bool:
     return any(kw in concept.lower() for kw in MEMORY_KEYWORDS)
+
+def wants_continue(concept: str) -> bool:
+    return any(kw in concept.lower() for kw in CONTINUE_KEYWORDS)
 
 
 # ─────────────────────────────────────────────
@@ -145,15 +154,16 @@ CRITICAL RULES:
    - "How to learn X?" / "Best resources for X" → numbered steps with real tools
    - "Compare X and Y" → markdown tables
 
-4. NUMBERED STEPS FORMAT (for learning/roadmap questions):
-   1. **Title** — What to do. Specific tool or resource.
-   2. **Title** — What to do. Specific tool or resource.
-   (give 6+ steps, mention real websites, books, packages)
+4. NUMBERED STEPS FORMAT — EXACTLY 6 steps, no more:
+   1. **Title** — One sentence max. Mention one specific tool.
+   2. **Title** — One sentence max.
+   (6 steps total — stop at 6)
 
-5. TABLE FORMAT:
+5. TABLE FORMAT — maximum 8 rows per table, no more:
    | Feature | A | B |
    |---------|---|---|
    | value   | v | v |
+   Pick only the MOST IMPORTANT differences. Do not list every possible feature.
 
 6. ANALOGY: 2-4 full sentences. Never just a label.
 """
@@ -170,9 +180,16 @@ def build_system_prompt(preferences: list[str], with_video: bool = False) -> str
         prompt += pref_block
 
     strict_json = """
-STRICT JSON FORMAT — respond ONLY with raw JSON, no markdown fences:
+STRICT JSON FORMAT RULES — follow exactly:
+- Respond ONLY with a raw JSON object
+- Do NOT wrap in ```json``` or any markdown fences
+- "explanation" must be a plain STRING — never an object or dict
+- Tables inside explanation: max 8 rows, use \\n between rows
+- Do NOT start explanation value with a | pipe character
+- CORRECT: "explanation": "| Feature | A |\\n|---------|---|\\n| row | val |"
+- WRONG: "explanation": | Feature | A |...
 {
-  "explanation": "Plain text string. Use \\n between numbered steps. Start with 1. directly.",
+  "explanation": "Plain string. Tables and steps go here as text using \\n.",
   "analogy": "2-4 full descriptive sentences.",
   "video_script": null,
   "follow_up_questions": ["question 1", "question 2", "question 3"]
@@ -196,20 +213,52 @@ def make_title(concept: str) -> str:
     return t[:57] + "..." if len(t) > 60 else t
 
 def clean_json(raw: str) -> str:
+    """Strip markdown fences and extract the JSON object"""
     raw = raw.strip()
-    raw = re.sub(r'^```(?:json)?\s*', '', raw)
-    raw = re.sub(r'\s*```$', '', raw)
-    return raw.strip()
+    # Remove ```json ... ``` or ``` ... ``` wrappers
+    raw = re.sub(r'^```(?:json)?\s*\n?', '', raw)
+    raw = re.sub(r'\n?```\s*$', '', raw)
+    raw = raw.strip()
+    # If response contains a JSON object, extract just that
+    start = raw.find('{')
+    end   = raw.rfind('}')
+    if start != -1 and end != -1 and end > start:
+        raw = raw[start:end+1]
+    return raw
 
 def normalize_explanation(value) -> str:
     if isinstance(value, list):
-        return "\n".join(
+        text = "\n".join(
             item if isinstance(item, str) else json.dumps(item)
             for item in value
         )
-    if isinstance(value, str):
-        return value
-    return str(value) if value else ""
+    elif isinstance(value, str):
+        text = value
+    else:
+        text = str(value) if value else ""
+
+    # Safety: if a markdown table has more than 10 data rows, trim it
+    lines     = text.split('\n')
+    new_lines = []
+    row_count = 0
+    in_table  = False
+    for line in lines:
+        is_row = line.strip().startswith('|') and '---' not in line
+        is_sep = '---' in line and line.strip().startswith('|')
+        if is_sep:
+            in_table  = True
+            row_count = 0
+            new_lines.append(line)
+        elif in_table and is_row:
+            row_count += 1
+            if row_count <= 8:
+                new_lines.append(line)
+            elif row_count == 9:
+                new_lines.append('| ... | ... | ... |')
+        else:
+            in_table = False
+            new_lines.append(line)
+    return '\n'.join(new_lines)
 
 def is_just_intro(text: str) -> bool:
     text = normalize_explanation(text)
@@ -306,10 +355,11 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
     if not request.concept.strip():
         raise HTTPException(status_code=400, detail="Concept cannot be empty.")
 
-    video_requested = wants_video(request.concept)
-    table_requested = wants_table(request.concept)
-    step_requested  = wants_steps(request.concept)
-    memory_detected = wants_memory(request.concept)
+    video_requested  = wants_video(request.concept)
+    table_requested  = wants_table(request.concept)
+    step_requested   = wants_steps(request.concept)
+    memory_detected  = wants_memory(request.concept)
+    continue_requested = wants_continue(request.concept)
 
     # ── Memory: detect and save new preference ───────────
     memory_saved       = False
@@ -343,19 +393,27 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
 
     # ── Build user message ────────────────────────────────
     if memory_detected and memory_saved:
-        # Acknowledge the preference and still answer any question in the message
         user_msg = (
             f"The user said: '{request.concept}'. "
             f"You have saved their preference: '{memory_instruction}'. "
             f"Acknowledge this was saved, then answer any question they asked. "
             f"If they only gave a preference with no question, just confirm it was saved."
         )
+    elif continue_requested:
+        user_msg = (
+            f"The user wants more. Look at the PREVIOUS assistant response in this "
+            f"conversation and give the NEXT 6 steps, picking up where you left off. "
+            f"Do NOT repeat any steps already given. Continue numbering from where you stopped. "
+            f"Write as a plain string with \\n between steps. No intro sentence. "
+            f"Each step: bold title + 1 sentence under 25 words."
+        )
     elif step_requested:
         user_msg = (
-            f"Give 6+ numbered steps with bold titles as a PLAIN TEXT STRING. "
-            f"Do NOT use a JSON object. Use \\n between steps. "
-            f"Start directly with '1.' — no intro sentence. "
-            f"Mention specific real tools. Question: {request.concept}"
+            f"Give EXACTLY 6 numbered steps — no more than 6. "
+            f"Each step: bold title + 1 sentence. Keep each step under 25 words. "
+            f"Write as a plain string with \\n between steps. "
+            f"Do NOT wrap in ```json``` fences. Start with '1.' immediately. "
+            f"Question: {request.concept}"
         )
     elif table_requested:
         user_msg = (
@@ -374,7 +432,7 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
     def call_groq(messages, temp=0.7):
         return client.chat.completions.create(
             model="llama-3.1-8b-instant",
-            max_tokens=2000,
+            max_tokens=800,            # Hard cap — prevents 15-step runaway responses
             temperature=temp,
             messages=messages,
             response_format={"type": "json_object"},
@@ -392,9 +450,25 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
         raise HTTPException(status_code=502, detail=f"AI API error: {str(e)}")
 
     parsed["explanation"] = normalize_explanation(parsed.get("explanation", ""))
-    parsed.setdefault("analogy",             "")
-    parsed.setdefault("video_script",        None)
-    parsed.setdefault("follow_up_questions", [])
+
+    # Normalize follow_up_questions — ensure it's always a list of plain strings
+    raw_questions = parsed.get("follow_up_questions", [])
+    if isinstance(raw_questions, list):
+        clean_questions = []
+        for q in raw_questions:
+            if isinstance(q, str):
+                clean_questions.append(q)
+            elif isinstance(q, dict):
+                # AI sometimes returns {"question": "text"} or {"1": "text"}
+                clean_questions.append(next(iter(q.values()), ""))
+            else:
+                clean_questions.append(str(q))
+        parsed["follow_up_questions"] = [q for q in clean_questions if q.strip()]
+    else:
+        parsed["follow_up_questions"] = []
+
+    parsed.setdefault("analogy",      "")
+    parsed.setdefault("video_script", None)
 
     # Retry if explanation is just an intro
     if is_just_intro(parsed.get("explanation", "")):
@@ -410,9 +484,17 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
             retry_parsed["explanation"] = normalize_explanation(retry_parsed.get("explanation", ""))
             if not is_just_intro(retry_parsed.get("explanation", "")):
                 parsed = retry_parsed
-                parsed.setdefault("analogy",             "")
-                parsed.setdefault("video_script",        None)
-                parsed.setdefault("follow_up_questions", [])
+                # Normalize follow_up_questions in retry response too
+                raw_q = parsed.get("follow_up_questions", [])
+                if isinstance(raw_q, list):
+                    parsed["follow_up_questions"] = [
+                        q if isinstance(q, str) else next(iter(q.values()), "") if isinstance(q, dict) else str(q)
+                        for q in raw_q if q
+                    ]
+                else:
+                    parsed["follow_up_questions"] = []
+                parsed.setdefault("analogy",      "")
+                parsed.setdefault("video_script", None)
         except Exception:
             pass
 
@@ -420,10 +502,18 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
     if video_requested and parsed.get("video_script") and os.environ.get("DID_API_KEY"):
         talk_id = create_talk(parsed["video_script"])
 
+    # has_more = True when the response contains numbered steps
+    # This tells the frontend to show the "Continue →" button
+    explanation_text = parsed.get("explanation", "")
+    has_more = bool(
+        (step_requested or continue_requested) and
+        re.search(r'^\s*[456]\.\s', explanation_text, re.MULTILINE)
+    )
+
     db.add(Message(
         conversation_id=conv.id,
         role="assistant",
-        content=parsed.get("explanation", ""),
+        content=explanation_text,
         ai_response=json.dumps(parsed),
     ))
     conv.updated_at    = datetime.utcnow()
@@ -436,5 +526,6 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
         video_requested=video_requested,
         memory_saved=memory_saved,
         memory_instruction=memory_instruction,
+        has_more=has_more,
         **parsed,
     )

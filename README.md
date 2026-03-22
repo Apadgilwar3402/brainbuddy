@@ -8,6 +8,7 @@ Built with FastAPI + React + Groq (Llama 3).
 ---
 
 ## ✨ Features
+
 - 💡 ELI5 explanations with real-world analogies
 - 📊 Markdown tables for comparisons (e.g. "compare Hadoop vs Spark")
 - 🎙️ Speech-to-text input (Chrome/Edge)
@@ -21,12 +22,14 @@ Built with FastAPI + React + Groq (Llama 3).
 ## 🚀 Local Setup
 
 ### 1. Clone the repo
+
 ```bash
 git clone https://github.com/YOUR-USERNAME/brainbuddy.git
 cd brainbuddy
 ```
 
 ### 2. Backend
+
 ```bash
 pip install -r requirements.txt
 cp .env.example .env
@@ -35,6 +38,7 @@ uvicorn main:app --reload
 ```
 
 ### 3. Frontend
+
 ```bash
 npm install
 npm run dev
@@ -47,6 +51,7 @@ Open http://localhost:3000
 ## 🌐 Deploy for Free
 
 ### Backend → Render
+
 1. Go to https://render.com → New Web Service → connect GitHub repo
 2. Set Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 3. Add environment variables:
@@ -54,6 +59,7 @@ Open http://localhost:3000
    - `FRONTEND_URL` = your Vercel URL (add after deploying frontend)
 
 ### Frontend → Vercel
+
 1. Go to https://vercel.com → Import GitHub repo
 2. Framework: Vite | Output: dist
 3. Add environment variable:
@@ -63,12 +69,12 @@ Open http://localhost:3000
 
 ## 🔑 Environment Variables
 
-| Variable       | Where      | Description                        |
-|----------------|------------|------------------------------------|
-| `GROQ_API_KEY` | Backend    | Free at console.groq.com           |
-| `FRONTEND_URL` | Backend    | Your Vercel URL (for CORS)         |
-| `VITE_API_URL` | Frontend   | Your Render URL                    |
-| `DID_API_KEY`  | Backend    | Optional — D-ID video generation   |
+| Variable       | Where    | Description                      |
+| -------------- | -------- | -------------------------------- |
+| `GROQ_API_KEY` | Backend  | Free at console.groq.com         |
+| `FRONTEND_URL` | Backend  | Your Vercel URL (for CORS)       |
+| `VITE_API_URL` | Frontend | Your Render URL                  |
+| `DID_API_KEY`  | Backend  | Optional — D-ID video generation |
 
 ---
 

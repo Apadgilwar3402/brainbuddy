@@ -44,8 +44,9 @@ class ExplainResponse(BaseModel):
     analogy:             str
     video_script:        str | None
     follow_up_questions: list[str]
-    memory_saved:        bool = False      # True when a new preference was saved this turn
-    memory_instruction:  str | None = None # The instruction that was saved
+    memory_saved:        bool = False
+    memory_instruction:  str | None = None
+    has_more:            bool = False   # True when response has numbered steps (more available)
 
 
 class PreferenceOut(BaseModel):
