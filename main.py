@@ -33,9 +33,37 @@ app = FastAPI(title="BrainBuddy API", version="2.0.0")
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
+# Allow all *.vercel.app subdomains so preview deploys don't break CORS
+import re as _re
+
+class VercelCORSMiddleware:
+    """Allows any vercel.app subdomain + the explicit FRONTEND_URL"""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            headers = dict(scope.get("headers", []))
+            origin  = headers.get(b"origin", b"").decode()
+            allowed = (
+                origin == "http://localhost:3000" or
+                origin == FRONTEND_URL or
+                bool(_re.match(r"https://.*\.vercel\.app$", origin)) or
+                bool(_re.match(r"https://.*\.onrender\.com$", origin))
+            )
+            if allowed and scope["method"] == "OPTIONS" if hasattr(scope, "method") else False:
+                pass
+
+        return await self.app(scope, receive, send)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", FRONTEND_URL],
+    allow_origins=[
+        "http://localhost:3000",
+        FRONTEND_URL,
+        "https://brainbuddy-l65k6kelw-apadgilwar3402s-projects.vercel.app",
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
