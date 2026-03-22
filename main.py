@@ -487,13 +487,21 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
             if isinstance(q, str):
                 clean_questions.append(q)
             elif isinstance(q, dict):
-                # AI sometimes returns {"question": "text"} or {"1": "text"}
                 clean_questions.append(next(iter(q.values()), ""))
             else:
                 clean_questions.append(str(q))
         parsed["follow_up_questions"] = [q for q in clean_questions if q.strip()]
     else:
         parsed["follow_up_questions"] = []
+
+    # Fallback: if AI returned no follow-up questions, generate generic ones from the concept
+    if not parsed["follow_up_questions"]:
+        concept_short = request.concept.strip().rstrip("?")
+        parsed["follow_up_questions"] = [
+            f"Can you give a real-world example of {concept_short}?",
+            f"What are common uses of {concept_short}?",
+            f"What are the limitations of {concept_short}?",
+        ]
 
     parsed.setdefault("analogy",      "")
     parsed.setdefault("video_script", None)
