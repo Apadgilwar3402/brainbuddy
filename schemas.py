@@ -44,3 +44,12 @@ class ExplainResponse(BaseModel):
     analogy:             str
     video_script:        str | None
     follow_up_questions: list[str]
+    memory_saved:        bool = False      # True when a new preference was saved this turn
+    memory_instruction:  str | None = None # The instruction that was saved
+
+
+class PreferenceOut(BaseModel):
+    id:          int
+    instruction: str
+    created_at:  datetime
+    model_config = {"from_attributes": True}
