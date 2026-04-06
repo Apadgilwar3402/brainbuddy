@@ -8,3 +8,7 @@ python-dotenv==1.0.1
 sqlalchemy==2.0.30
 requests==2.31.0
 gunicorn==21.2.0
+# Auth dependencies
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.9

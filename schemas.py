@@ -11,7 +11,6 @@ class MessageOut(BaseModel):
     created_at:      datetime
     model_config = {"from_attributes": True}
 
-
 class ConversationSummary(BaseModel):
     id:            int
     title:         str
@@ -19,7 +18,6 @@ class ConversationSummary(BaseModel):
     updated_at:    datetime
     message_count: int
     model_config = {"from_attributes": True}
-
 
 class ConversationDetail(BaseModel):
     id:            int
@@ -30,11 +28,9 @@ class ConversationDetail(BaseModel):
     messages:      list[MessageOut]
     model_config = {"from_attributes": True}
 
-
 class ExplainRequest(BaseModel):
     concept:         str
     conversation_id: int | None = None
-
 
 class ExplainResponse(BaseModel):
     conversation_id:     int
@@ -44,13 +40,4 @@ class ExplainResponse(BaseModel):
     analogy:             str
     video_script:        str | None
     follow_up_questions: list[str]
-    memory_saved:        bool = False
-    memory_instruction:  str | None = None
-    has_more:            bool = False   # True when response has numbered steps (more available)
-
-
-class PreferenceOut(BaseModel):
-    id:          int
-    instruction: str
-    created_at:  datetime
-    model_config = {"from_attributes": True}
+    has_more:            bool = False

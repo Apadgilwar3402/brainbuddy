@@ -13,11 +13,8 @@ class Conversation(Base):
     updated_at    = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     message_count = Column(Integer, default=0)
 
-    messages = relationship(
-        "Message", back_populates="conversation",
-        cascade="all, delete-orphan",
-        order_by="Message.created_at"
-    )
+    messages = relationship("Message", back_populates="conversation",
+                            cascade="all, delete-orphan", order_by="Message.created_at")
 
 
 class Message(Base):
@@ -31,16 +28,3 @@ class Message(Base):
     created_at      = Column(DateTime, default=datetime.utcnow)
 
     conversation = relationship("Conversation", back_populates="messages")
-
-
-class UserPreference(Base):
-    """
-    Stores persistent instructions the user wants injected into every prompt.
-    e.g. "always include code examples", "keep answers brief", etc.
-    Each row is one instruction — users can have multiple.
-    """
-    __tablename__ = "user_preferences"
-
-    id         = Column(Integer, primary_key=True, index=True)
-    instruction = Column(Text, nullable=False)    # The actual preference text
-    created_at  = Column(DateTime, default=datetime.utcnow)
