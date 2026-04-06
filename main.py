@@ -367,7 +367,12 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
     parsed.setdefault("analogy", "")
     parsed.setdefault("video_script", None)
 
-    if is_just_intro(parsed.get("explanation", "")):
+# Retry if explanation is empty OR just an intro
+    needs_retry = (
+        not parsed.get("explanation", "").strip()
+        or is_just_intro(parsed.get("explanation", ""))
+        )
+    if needs_retry:
         try:
             rp = json.loads(clean_json(call_groq([
                 {"role": "system", "content": system_prompt},
