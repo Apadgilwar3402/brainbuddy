@@ -193,19 +193,19 @@ CRITICAL RULES:
 3. ANSWER THE ACTUAL QUESTION ASKED. Do not give unrelated steps.
 4. QUESTION TYPES:
    - "What is X?" / "Why?" / "Which is better?" → clear direct answer
-   - "Compare X and Y" → markdown tables (max 8 rows)
+   - "Compare X and Y" / "differences" / "table" → put markdown table INSIDE explanation string
    - "How to learn X?" / "Roadmap for X" → EXACTLY 6 numbered steps
-5. STEPS FORMAT — EXACTLY 6, plain string with \\n, stop at 6:
+5. TABLE RULE — tables go INSIDE the explanation string using \\n:
+   CORRECT: "explanation": "| Feature | A | B |\\n|---------|---|---|\\n| row | v | v |"
+   WRONG:   "explanation": "", "table": "| Feature |..."
+   WRONG:   "explanation": {}, "table": {}
+   Max 8 rows per table.
+6. STEPS FORMAT — EXACTLY 6, plain string with \\n, stop at 6:
    1. **Title** — One sentence.
-6. TABLE FORMAT — max 8 rows:
-   | Feature | A | B |
-   |---------|---|---|
 7. ANALOGY: 2-4 full sentences. Never a one-word label.
-8. follow_up_questions: 3 SHORT questions directly about THIS topic.
-   BAD: "What are the limitations of Which one is more suitable for NLP?"
-   GOOD: "What are the limitations of RNNs for NLP?"
+8. follow_up_questions: 3 SHORT questions directly about THIS specific topic.
 
-STRICT JSON — no markdown fences, explanation is a plain string:
+STRICT JSON — no markdown fences, ALL content inside explanation as a plain string:
 """
 
 def build_system_prompt(with_video: bool = False) -> str:
@@ -287,7 +287,7 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
         if request.conversation_id:
             conv = db.get(Conversation, request.conversation_id)
         else:
-            conv = Conversation(title=f"Summary: {make_title(request.concept)}")
+            conv = Conversation(user_id=None, title=f"Summary: {make_title(request.concept)}")
             db.add(conv); db.flush()
 
         db.add(Message(conversation_id=conv.id, role="user", content=request.concept))
@@ -328,7 +328,7 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
             raise HTTPException(status_code=404, detail="Not found")
         history = get_history(conv.id, db)
     else:
-        conv = Conversation(title=make_title(request.concept))
+        conv = Conversation(user_id=None, title=make_title(request.concept))
         db.add(conv); db.flush()
         history = []
 
@@ -339,7 +339,12 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
     elif step_req:
         user_msg = f"EXACTLY 6 numbered steps, bold titles, plain string with \\n, start '1.' immediately, each under 25 words. Question: {request.concept}"
     elif table_req:
-        user_msg = f"Use markdown tables (max 8 rows). Start directly with table. Question: {request.concept}"
+        user_msg = (
+            f"Put a markdown table INSIDE the explanation string field. "
+            f"Do NOT add a separate 'table' key. "
+            f"Format: explanation = '| Feature | A | B |\\n|---|---|---|\\n| row | val | val |' "
+            f"Max 8 rows. No intro sentence. Question: {request.concept}"
+        )
     else:
         user_msg = f"Answer this question directly and fully. No intro sentence. Question: {request.concept}"
 
@@ -363,16 +368,21 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
         raise HTTPException(status_code=502, detail=f"AI API error: {str(e)}")
 
     parsed["explanation"] = normalize_explanation(parsed.get("explanation", ""))
+
+    # Rescue table if AI put it in a separate "table" key instead of explanation
+    if not parsed["explanation"].strip() and "table" in parsed:
+        parsed["explanation"] = normalize_explanation(parsed.pop("table"))
+    elif "table" in parsed and parsed["table"]:
+        # Append table to explanation if both exist
+        table_text = normalize_explanation(parsed.pop("table"))
+        if table_text not in parsed["explanation"]:
+            parsed["explanation"] = (parsed["explanation"] + "\n\n" + table_text).strip()
+
     parsed["follow_up_questions"] = normalize_questions(parsed.get("follow_up_questions", []), request.concept)
     parsed.setdefault("analogy", "")
     parsed.setdefault("video_script", None)
 
-# Retry if explanation is empty OR just an intro
-    needs_retry = (
-        not parsed.get("explanation", "").strip()
-        or is_just_intro(parsed.get("explanation", ""))
-        )
-    if needs_retry:
+    if is_just_intro(parsed.get("explanation", "")):
         try:
             rp = json.loads(clean_json(call_groq([
                 {"role": "system", "content": system_prompt},
