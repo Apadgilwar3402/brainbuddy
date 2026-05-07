@@ -1,5 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel
+from typing import List,Dict, Any
 
 
 class MessageOut(BaseModel):
@@ -32,6 +33,9 @@ class ExplainRequest(BaseModel):
     concept:         str
     conversation_id: int | None = None
 
+
+TableRow = Dict[str, Any]  
+
 class ExplainResponse(BaseModel):
     conversation_id:     int
     talk_id:             str | None
@@ -41,3 +45,4 @@ class ExplainResponse(BaseModel):
     video_script:        str | None
     follow_up_questions: list[str]
     has_more:            bool = False
+    table: List[Dict[str, Any]] = []

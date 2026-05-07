@@ -29,7 +29,7 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", FRONTEND_URL],
+    allow_origins=["http://localhost:3000","http://localhost:5173", FRONTEND_URL],
     allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
@@ -192,29 +192,33 @@ CRITICAL RULES:
 2. NEVER write intro phrases. Start directly with the content.
 3. ANSWER THE ACTUAL QUESTION ASKED. Do not give unrelated steps.
 4. QUESTION TYPES:
-   - "What is X?" / "Why?" / "Which is better?" → clear direct answer
-   - "Compare X and Y" / "differences" / "table" → put markdown table INSIDE explanation string
-   - "How to learn X?" / "Roadmap for X" → EXACTLY 6 numbered steps
-5. TABLE RULE — tables go INSIDE the explanation string using \\n:
-   CORRECT: "explanation": "| Feature | A | B |\\n|---------|---|---|\\n| row | v | v |"
-   WRONG:   "explanation": "", "table": "| Feature |..."
-   WRONG:   "explanation": {}, "table": {}
-   Max 8 rows per table.
-6. STEPS FORMAT — EXACTLY 6, plain string with \\n, stop at 6:
-   1. **Title** — One sentence.
+- "What is X?" / "Why?" / "Which is better?" → clear direct answer
+- "Compare X and Y" / "differences" / "table" → include a separate JSON field called "table"
+- "How to learn X?" / "Roadmap for X" → EXACTLY 6 numbered steps in "explanation"
+5. TABLE RULE:
+- Never put markdown tables inside "explanation"
+- If user asks for comparison, return a JSON array in "table"
+- Each row should be a dictionary
+- First key should usually be "feature"
+- Remaining keys should match the compared items dynamically
+6. STEPS FORMAT — EXACTLY 6, plain string with \n, stop at 6:
+1. **Title** — One sentence.
 7. ANALOGY: 2-4 full sentences. Never a one-word label.
 8. follow_up_questions: 3 SHORT questions directly about THIS specific topic.
 
-STRICT JSON — no markdown fences, ALL content inside explanation as a plain string:
+STRICT JSON — no markdown fences.
 """
 
 def build_system_prompt(with_video: bool = False) -> str:
     json_fmt = """
+Return ONLY valid JSON with this shape:
+
 {
-  "explanation": "Plain string. Direct answer. Tables/steps as text using \\n.",
+  "explanation": "Plain string. Direct answer.",
   "analogy": "2-4 full descriptive sentences.",
   "video_script": null,
-  "follow_up_questions": ["Short question about THIS specific topic", "Another short question", "Third short question"]
+  "follow_up_questions": ["Short question about THIS specific topic", "Another short question", "Third short question"],
+  "table": []
 }
 """
     if with_video:
@@ -287,7 +291,7 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
         if request.conversation_id:
             conv = db.get(Conversation, request.conversation_id)
         else:
-            conv = Conversation(user_id=None, title=f"Summary: {make_title(request.concept)}")
+            conv = Conversation(title=f"Summary: {make_title(request.concept)}")
             db.add(conv); db.flush()
 
         db.add(Message(conversation_id=conv.id, role="user", content=request.concept))
@@ -328,7 +332,7 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
             raise HTTPException(status_code=404, detail="Not found")
         history = get_history(conv.id, db)
     else:
-        conv = Conversation(user_id=None, title=make_title(request.concept))
+        conv = Conversation(title=make_title(request.concept))
         db.add(conv); db.flush()
         history = []
 
@@ -339,12 +343,35 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
     elif step_req:
         user_msg = f"EXACTLY 6 numbered steps, bold titles, plain string with \\n, start '1.' immediately, each under 25 words. Question: {request.concept}"
     elif table_req:
-        user_msg = (
-            f"Put a markdown table INSIDE the explanation string field. "
-            f"Do NOT add a separate 'table' key. "
-            f"Format: explanation = '| Feature | A | B |\\n|---|---|---|\\n| row | val | val |' "
-            f"Max 8 rows. No intro sentence. Question: {request.concept}"
-        )
+        user_msg = f"""
+        Generate ONLY comparison table data.
+
+        STRICT RULES:
+        - explanation MUST be null
+        - analogy MUST be null
+        - video_script MUST be null
+        - table MUST contain 5 to 8 meaningful comparison rows
+        - follow_up_questions MUST contain exactly 3 useful follow-up questions
+
+        TABLE FORMAT:
+        - table must be a JSON array
+        - each row must be a dictionary
+        - first column should usually be "feature"
+        - remaining columns should match the compared items dynamically
+
+        Example:
+        [
+        {{
+            "feature": "Speed",
+            "Hadoop": "Slow",
+            "Spark": "Fast"
+        }}
+        ]
+
+        USER QUESTION:
+        {request.concept}
+        """
+    
     else:
         user_msg = f"Answer this question directly and fully. No intro sentence. Question: {request.concept}"
 
@@ -368,21 +395,50 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
         raise HTTPException(status_code=502, detail=f"AI API error: {str(e)}")
 
     parsed["explanation"] = normalize_explanation(parsed.get("explanation", ""))
+    
+    if not isinstance(parsed.get("table"), list):
+        parsed["table"] = []
 
-    # Rescue table if AI put it in a separate "table" key instead of explanation
-    if not parsed["explanation"].strip() and "table" in parsed:
-        parsed["explanation"] = normalize_explanation(parsed.pop("table"))
-    elif "table" in parsed and parsed["table"]:
-        # Append table to explanation if both exist
-        table_text = normalize_explanation(parsed.pop("table"))
-        if table_text not in parsed["explanation"]:
-            parsed["explanation"] = (parsed["explanation"] + "\n\n" + table_text).strip()
+    cleaned_table = []
+
+    for row in parsed["table"]:
+        if isinstance(row, dict):
+            cleaned_row = {}
+
+        for key, value in row.items():
+            cleaned_row[str(key)] = str(value)
+
+        cleaned_table.append(cleaned_row)
+
+    parsed["table"] = cleaned_table
 
     parsed["follow_up_questions"] = normalize_questions(parsed.get("follow_up_questions", []), request.concept)
     parsed.setdefault("analogy", "")
     parsed.setdefault("video_script", None)
+    parsed.setdefault("table", [])
 
-    if is_just_intro(parsed.get("explanation", "")):
+    # If the user requested a table, enforce that we only return table content.
+    # If user requested a table:
+# return ONLY table + follow-up questions
+    if table_req:
+        parsed["explanation"] = ""
+        parsed["analogy"] = ""
+        parsed["video_script"] = None
+
+        parsed["follow_up_questions"] = normalize_questions(
+            parsed.get("follow_up_questions", []),
+            request.concept
+        )
+
+    # Force 5-8 rows minimum
+    if len(parsed.get("table", [])) < 5:
+        parsed["follow_up_questions"] = [
+            f"What are more differences in {request.concept}?",
+            f"Can you compare performance aspects too?",
+            f"What are real-world use cases?"
+        ]
+
+    if not table_req and is_just_intro(parsed.get("explanation", "")):
         try:
             rp = json.loads(clean_json(call_groq([
                 {"role": "system", "content": system_prompt},
@@ -399,7 +455,10 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
     if video_req and parsed.get("video_script") and os.environ.get("DID_API_KEY"):
         talk_id = create_talk(parsed["video_script"])
 
-    explanation_text = parsed.get("explanation", "")
+    if table_req:
+        explanation_text = "[Comparison Table]"
+    else:
+        explanation_text = parsed.get("explanation") or ""
     has_more = bool((step_req or continue_req) and re.search(r'^\s*[456]\.\s', explanation_text, re.MULTILINE))
 
     db.add(Message(conversation_id=conv.id, role="assistant", content=explanation_text, ai_response=json.dumps(parsed)))

@@ -32,8 +32,13 @@ function Section({
   iconBg,
   onReadAloud,
   speaking,
-  markdown,
+  markdown = false,
 }) {
+  // Hide empty sections
+  if (!content || content.trim() === "") {
+    return null;
+  }
+
   return (
     <div
       style={{
@@ -68,6 +73,7 @@ function Section({
           >
             {icon}
           </span>
+
           <span
             style={{
               fontFamily: "Fraunces, serif",
@@ -81,10 +87,13 @@ function Section({
             {title}
           </span>
         </div>
+
         {window.speechSynthesis && (
           <button
             onClick={
-              speaking ? onReadAloud.stop : () => onReadAloud.speak(content)
+              speaking
+                ? onReadAloud.stop
+                : () => onReadAloud.speak(content)
             }
             style={{
               background: "none",
@@ -96,13 +105,12 @@ function Section({
               transition: "opacity 0.15s",
               padding: "2px 4px",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.opacity = 1)}
-            onMouseLeave={(e) => (e.currentTarget.style.opacity = 0.6)}
           >
             {speaking ? "⏹️" : "🔊"}
           </button>
         )}
       </div>
+
       {markdown ? (
         <MarkdownRenderer content={content} />
       ) : (
@@ -325,6 +333,113 @@ function FollowUps({ questions, onAsk, onContinue, hasMore }) {
   );
 }
 
+function TableSection({ table }) {
+  if (!table || !Array.isArray(table) || table.length === 0) {
+    return null;
+  }
+
+  const columns = Object.keys(table[0]);
+
+  return (
+    <div
+      style={{
+        marginTop: "18px",
+        marginBottom: "18px",
+        borderRadius: "16px",
+        overflowX: "auto",
+        overflow: "hidden",
+        border: "1.5px solid var(--border-main)",
+        background: "white",
+        boxShadow: "0 4px 12px rgba(0,0,0,0.06)",
+      }}
+    >
+      <table
+        style={{
+          width: "100%",
+          borderCollapse: "collapse",
+          minWidth: "600px",
+        }}
+      >
+        {/* Header */}
+        <thead>
+          <tr
+            style={{
+              background:
+                "linear-gradient(90deg, #4F46E5 0%, #7C3AED 100%)",
+            }}
+          >
+            {columns.map((column) => (
+              <th
+                key={column}
+                style={{
+                  padding: "14px 18px",
+                  textAlign: "left",
+                  color: "white",
+                  fontSize: "14px",
+                  fontWeight: "700",
+                  borderBottom: "1px solid rgba(255,255,255,0.15)",
+                  textTransform: "capitalize",
+                }}
+              >
+                {column.replace(/_/g, " ")}
+              </th>
+            ))}
+          </tr>
+        </thead>
+
+        {/* Body */}
+        <tbody>
+          {table.map((row, rowIndex) => (
+            <tr
+              key={rowIndex}
+              style={{
+                background:
+                  rowIndex % 2 === 0 ? "#FAFAFA" : "#F3F4F6",
+                transition: "background 0.2s ease",
+              }}
+            >
+              {columns.map((column, colIndex) => (
+                <td
+                  key={column}
+                  style={{
+                    padding: "14px 18px",
+                    borderBottom: "1px solid #E5E7EB",
+                    fontSize: "14px",
+                    color: "#1F2937",
+                    fontWeight: colIndex === 0 ? "600" : "400",
+                  }}
+                >
+                  {row[column] || "-"}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function formatHeader(key) {
+  return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+const thStyle = {
+  textAlign: "left",
+  padding: "10px 12px",
+  borderBottom: "1px solid var(--border-main)",
+  color: "var(--text-muted)",
+  fontWeight: 700,
+};
+
+const tdStyle = {
+  textAlign: "left",
+  padding: "10px 12px",
+  borderBottom: "1px solid var(--border-main)",
+  color: "var(--text-primary)",
+  verticalAlign: "top",
+};
+
 export default function ResponseCard({ data, onFollowUp }) {
   const readAloud = useReadAloud();
 
@@ -371,6 +486,10 @@ export default function ResponseCard({ data, onFollowUp }) {
           speaking={readAloud.speaking}
           markdown={true}
         />
+        {data.table && data.table.length > 0 && (
+          <TableSection table={data.table} />
+        )}
+
         {data.analogy && data.analogy.length > 5 && (
           <Section
             icon="🌍"
