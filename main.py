@@ -298,7 +298,7 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
 
         try:
             resp = client.chat.completions.create(
-                model="llama-3.1-8b-instant", max_tokens=1200, temperature=0.3,
+                model="openai/gpt-oss-120b", max_tokens=1200, temperature=0.3,
                 messages=[
                     {"role": "system", "content": SUMMARIZE_PROMPT},
                     {"role": "user", "content": f"Summarize to ~{target_words} words (50-70% of {word_count}). Keep ALL key points.\n\nTEXT:\n{text_to_summarize}"},
@@ -380,7 +380,7 @@ async def explain_concept(request: ExplainRequest, db: Session = Depends(get_db)
 
     def call_groq(msgs, temp=0.7):
         return client.chat.completions.create(
-            model="llama-3.1-8b-instant", max_tokens=800, temperature=temp,
+            model="openai/gpt-oss-120b", max_tokens=800, temperature=temp,
             messages=msgs, response_format={"type": "json_object"},
         )
 

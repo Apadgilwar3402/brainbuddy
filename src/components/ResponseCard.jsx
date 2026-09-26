@@ -91,9 +91,7 @@ function Section({
         {window.speechSynthesis && (
           <button
             onClick={
-              speaking
-                ? onReadAloud.stop
-                : () => onReadAloud.speak(content)
+              speaking ? onReadAloud.stop : () => onReadAloud.speak(content)
             }
             style={{
               background: "none",
@@ -364,8 +362,7 @@ function TableSection({ table }) {
         <thead>
           <tr
             style={{
-              background:
-                "linear-gradient(90deg, #4F46E5 0%, #7C3AED 100%)",
+              background: "linear-gradient(90deg, #4F46E5 0%, #7C3AED 100%)",
             }}
           >
             {columns.map((column) => (
@@ -393,8 +390,7 @@ function TableSection({ table }) {
             <tr
               key={rowIndex}
               style={{
-                background:
-                  rowIndex % 2 === 0 ? "#FAFAFA" : "#F3F4F6",
+                background: rowIndex % 2 === 0 ? "#FAFAFA" : "#F3F4F6",
                 transition: "background 0.2s ease",
               }}
             >
